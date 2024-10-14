@@ -19,8 +19,10 @@ import { UserData } from 'src/models/userData';
 
     @WebSocketServer() server: Server;      
 
-    handleDisconnect(client: any) {
-      console.log('disconnected user: ', client.id);
+    handleDisconnect(client: Socket) {
+      let roomTodisconect = client.data.room as string;
+      client.leave(roomTodisconect);
+      this.server.to(roomTodisconect).emit('message', { token: client.id, message: 'disconnected' });
     }
 
 
@@ -30,9 +32,17 @@ import { UserData } from 'src/models/userData';
 
     @SubscribeMessage('identify')
     newIdentify(@ConnectedSocket() client: Socket, @MessageBody() data: UserData) {
+      //leave old room
+      if (client.data.room){
+        client.leave(client.data.room);
+        this.server.to(client.data.room).emit('message', { token: client.id, message: 'disconnected' });
+      }
+      //join new room
       client.join(data.city);
+      client.data.room = data.city;
+
       data.id = client.id;
-      this.sendInfotoAll(data);
+      this.sendInfoToAll(data,client.id);
       client.emit('message', { token: data.id });
     }
 
@@ -42,12 +52,11 @@ import { UserData } from 'src/models/userData';
     }
 
     @SubscribeMessage('update_to_all')
-    updateToAll(@MessageBody() data: UserData) {
-      this.server.to(data.city).emit('message',  data );
+    updateToAll(@MessageBody() data: UserData, @ConnectedSocket() client: Socket) {
+      this.server.to(data.city).except(client.id).emit('message', data);
     }
 
-
-    sendInfotoAll(data: UserData) {
-      this.server.to(data.city).emit('message', data );
+    private sendInfoToAll(data: UserData,exceptId?:string) {
+      this.server.to(data.city).except(exceptId).emit('message', data );
     }
   }
