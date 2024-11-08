@@ -8,7 +8,7 @@ import {
     WebSocketServer,
   } from '@nestjs/websockets';
   import { Server, Socket } from 'socket.io';
-import { UserData } from 'src/models/userData';
+import { UserData, UserDataExtended } from 'src/models/userData';
   
   @WebSocketGateway({
     cors: {
@@ -27,11 +27,13 @@ import { UserData } from 'src/models/userData';
 
 
     handleConnection(client: Socket) {
+      console.log('connected: ' + client.id);
       client.emit('Connected', { token: client.id });
     }
 
     @SubscribeMessage('identify')
-    newIdentify(@ConnectedSocket() client: Socket, @MessageBody() data: UserData) {
+    newIdentify(@ConnectedSocket() client: Socket, @MessageBody() data: UserDataExtended) {
+      console.log(data);
       //leave old room
       if (client.data.room){
         client.leave(client.data.room);
@@ -43,12 +45,17 @@ import { UserData } from 'src/models/userData';
 
       data.id = client.id;
       this.sendInfoToAll(data,client.id);
-      client.emit('message', { token: data.id });
+      console.log("new user: " + data.id);
+      client.emit('selfId', { token: data.id });
     }
 
     @SubscribeMessage('update_user')
-    updateUser(@MessageBody() data: {userId: string, userData: UserData}) {
-      this.server.to(data.userId).emit('message',  data.userData);
+    updateUser(@MessageBody() data: {userId: string, userData: UserDataExtended}) {
+      this.server.to(data.userId).emit('receive_userData',  data.userData);
+    }
+    @SubscribeMessage('update_user_location')
+    updateUserLocation(@MessageBody() data: {userId: string, userData: UserData}) {
+      this.server.to(data.userId).emit('receive_user_location',  data.userData);
     }
 
     @SubscribeMessage('update_to_all')
