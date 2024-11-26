@@ -7,8 +7,9 @@ import {
     WebSocketGateway,
     WebSocketServer,
   } from '@nestjs/websockets';
+import { subscribe } from 'diagnostics_channel';
   import { Server, Socket } from 'socket.io';
-import { UserData, UserDataExtended } from 'src/models/userData';
+import { PartialUserData, UserData } from 'src/models/userData';
   
   @WebSocketGateway({
     cors: {
@@ -21,19 +22,33 @@ import { UserData, UserDataExtended } from 'src/models/userData';
 
     handleDisconnect(client: Socket) {
       let roomTodisconect = client.data.room as string;
+
+      this.server.to(roomTodisconect).emit('remove_user', { id: client.id });
       client.leave(roomTodisconect);
-      this.server.to(roomTodisconect).emit('message', { token: client.id, message: 'disconnected' });
     }
 
 
     handleConnection(client: Socket) {
       console.log('connected: ' + client.id);
-      client.emit('Connected', { token: client.id });
+    }
+
+    @SubscribeMessage('selfId')
+    selfId(@ConnectedSocket() client: Socket){
+      this.server.to(client.id).emit('selfId', { token: client.id});
     }
 
     @SubscribeMessage('identify')
-    newIdentify(@ConnectedSocket() client: Socket, @MessageBody() data: UserDataExtended) {
-      console.log(data);
+    newIdentify(@ConnectedSocket() client: Socket, @MessageBody() userData: string, @MessageBody() locationData: PartialUserData) {
+      let rawData:any = JSON.parse(userData[0]);
+      locationData = JSON.parse(locationData[1] as any);
+      let data: UserData = {
+        id: rawData.id,
+        city: rawData.city,
+        latitude: locationData.latitude,
+        longitude: locationData.longitude,
+        pet_1: JSON.parse(rawData.pet_1),
+        pet_2: JSON.parse(rawData.pet_2),
+      }
       //leave old room
       if (client.data.room){
         client.leave(client.data.room);
@@ -45,25 +60,48 @@ import { UserData, UserDataExtended } from 'src/models/userData';
 
       data.id = client.id;
       this.sendInfoToAll(data,client.id);
-      console.log("new user: " + data.id);
-      client.emit('selfId', { token: data.id });
     }
 
     @SubscribeMessage('update_user')
-    updateUser(@MessageBody() data: {userId: string, userData: UserDataExtended}) {
-      this.server.to(data.userId).emit('receive_userData',  data.userData);
+    updateUser(@MessageBody() userData: UserData) {
+
+      this.server.to(userData.city).except(userData.id).emit('receive_userData',  userData);
     }
+
+    @SubscribeMessage('update_userdata_to_user')
+    updateToUser(@MessageBody() userData: any, @MessageBody() partialData: PartialUserData) {
+      userData = JSON.parse(userData[0] as any);
+      partialData = JSON.parse(partialData[1] as any);
+      let data: UserData = {
+        id: userData.id,
+        city: userData.city,
+        latitude: partialData.latitude,
+        longitude: partialData.longitude,
+        pet_1: JSON.parse(userData.pet_1),
+        pet_2: JSON.parse(userData.pet_2),
+        receiver: partialData.receiver
+      }
+      this.server.to(data.city).except(data.id).emit('receive_userData',  data);
+    }
+
     @SubscribeMessage('update_user_location')
-    updateUserLocation(@MessageBody() data: {userId: string, userData: UserData}) {
-      this.server.to(data.userId).emit('receive_user_location',  data.userData);
+    updateUserLocation(@MessageBody() userData: PartialUserData) {
+      userData = JSON.parse(userData as any);
+      this.server.to(userData.city).except(userData.id).emit('receive_user_location',  userData);
+    }
+
+    @SubscribeMessage('update_to_user')
+    updateToUserLocation(@MessageBody() userData: PartialUserData) {
+      userData = JSON.parse(userData as any);
+      this.server.to(userData.receiver).emit('receive_user_location',  userData);
     }
 
     @SubscribeMessage('update_to_all')
-    updateToAll(@MessageBody() data: UserData, @ConnectedSocket() client: Socket) {
+    updateToAll(@MessageBody() data: PartialUserData, @ConnectedSocket() client: Socket) {
       this.server.to(data.city).except(client.id).emit('message', data);
     }
 
-    private sendInfoToAll(data: UserData,exceptId?:string) {
-      this.server.to(data.city).except(exceptId).emit('message', data );
+    private sendInfoToAll(data: PartialUserData,exceptId?:string) {
+      this.server.to(data.city).except(exceptId).emit('receive_userData', data );
     }
   }

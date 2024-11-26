@@ -1,11 +1,12 @@
-export interface UserData {
+export interface PartialUserData {
     id?: string;
     city:string;
     latitude: number;
     longitude: number;
+    receiver?: string;
 }
 
-export interface UserDataExtended extends UserData {
+export interface UserData extends PartialUserData {
   pet_1: {
     raceId: number;
     name: string;
